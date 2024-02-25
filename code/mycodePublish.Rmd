@@ -1,0 +1,299 @@
+---
+title: "yunan imaging"
+author: "YH"
+date: '2022-12-16'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+data=read.csv("data1.csv")
+data$Section.ID= data[,1]
+data=data[,-1]
+```
+
+
+```{r}
+data1=data[which(is.na(data$Average.Ratios)!=1),]
+data1$Section.ID=substr(data1$Section.ID,1,4)
+data1=data1[order(data1$Section.ID),]
+length(unique(data1$Section.ID))
+#write.csv(data1,"C:/Users/haowu/OneDrive/Desktop/yunan/datago.csv",row.names = F)
+```
+
+```{r}
+data2=matrix(0,5*length(unique(data1$Section.ID)),5)
+data2=as.data.frame(data2)
+
+colnames(data2)=c("Section.ID","ratio","section","Age","Diet")
+data2$Section.ID=rep(unique(data1$Section.ID),each=5)
+
+my_section=c("Duodenum","Jejunum","Ileum","Proximal Colon","Distal Colon")
+data2$section=rep(my_section,length(unique(data1$Section.ID)))
+
+data2$ratio=NA
+
+for ( i in 1:nrow(data2)){
+  for ( j in 1:nrow(data1)){
+    if (data2$Section.ID[i]==data1$Section.ID[j] & data2$section[i]==data1$Section[j]){
+      data2$ratio[i]=data1$Average.Ratios[j]
+    }
+  }
+}
+
+
+data2=data2[order(data2$Section.ID),]
+
+for ( i in 1: nrow(data2)){
+  for ( j in 1: nrow(data1))
+    if (data2$Section.ID[i]==data1$Section.ID[j]){
+      data2$Age[i]=data1$Age[j]
+      data2$Diet[i]=data1$Diet[j]
+    }
+}
+
+
+```
+
+```{r}
+mydata=data2
+
+mydata$section=factor(mydata$section,levels=c("Duodenum","Jejunum","Ileum","Proximal Colon","Distal Colon"),labels = c("DUO","JEJ","ILE","PC","DC"))
+
+mydata$Diet=factor(mydata$Diet,levels = c("Control","GOS","hGOS"))
+
+mydata$Age=factor(mydata$Age,levels = c("Old","Young"))
+
+#write.csv(mydata,"C:/Users/haowu/OneDrive/Desktop/yunan/mydata.csv",row.names = F)
+```
+
+#exploratoary analysis
+```{r}
+mean=tapply(mydata$ratio,list(mydata$Age,mydata$section),mean,na.rm=T)
+print(mean)
+
+
+#plot of means
+data_mean=as.data.frame(t(mean))
+data_mean$my_section=1:5
+
+library(ggplot2)
+ggplot(data_mean)+
+  geom_line(aes(x=my_section,y=Young,color="young"))+
+  geom_line(aes(x=my_section,y=Old,color="old"))
+
+
+#diet
+mean1=tapply(mydata$ratio,list(mydata$Diet,mydata$section),mean,na.rm=T)
+print(mean1)
+
+
+#plot of means
+data_mean1=as.data.frame(t(mean1))
+data_mean1$my_section=1:5
+
+library(ggplot2)
+ggplot(data_mean1)+
+  geom_line(aes(x=my_section,y=Control,color="Control"))+
+  geom_line(aes(x=my_section,y=GOS,color="GOS"))+
+  geom_line(aes(x=my_section,y=hGOS,color="hGOS"))
+
+  #+scale_x_continuous(breaks=my_section,name = "section")+
+  #ylab("CD4+ cell counts")+
+  #ggtitle("Longitudinal Mean cell counts")
+
+```
+
+```{r}
+#install.packages("lme4")
+#install.packages("lmerTest")
+library(lme4)
+library(lmerTest)
+
+#model1=lmer(log(ratio)~-1+section*(Diet+Age)+(1|Section.ID),REML=F,data = mydata)
+#summary(model1)
+
+
+model2=lmer(ratio~section+(Age+Diet)+(1|Section.ID),REML=F,data = mydata)
+summary(model2)
+
+
+#model3=lmer(log(ratio)~-1+section+(section:Diet)*Age+(1|Section.ID),REML=F,data = mydata)
+#summary(model3)
+
+#generalized linear mix effect model, binomial link (odds ratio)
+#section xx has significant effect on the outcome(ratio)
+model4 <- glmer(ratio~-1+section+Diet+Age+(1|Section.ID), family=binomial, 
+              data=mydata, nAGQ=0)
+summary(model4)
+
+
+
+ct1=matrix(c(-1,0,1,0,0,0,0,0),byrow=T,nrow=1)
+car::linearHypothesis(model=model4,hypothesis.matrix = ct1,rhs = 0)
+
+
+#effect of diet on ratio across section
+model5 <- glmer(ratio~-1+section*Diet+Age+(1|Section.ID), family=binomial, 
+              data=mydata, nAGQ=0)
+summary(model5)
+
+#effect of diet across age/ effect of age across diet on outcome
+model6 <- glmer(ratio~-1+section+Diet*Age+(1|Section.ID), family=binomial, 
+              data=mydata, nAGQ=0)
+summary(model6)
+
+#effect of age on ratio across section
+model7 <- glmer(ratio~-1+section*Age+Diet+(1|Section.ID), family=binomial, 
+              data=mydata, nAGQ=0)
+summary(model7)
+
+#effect of diet across age across section on outcome/三者顺序可以换
+model8 <- glmer(ratio~-1+section*Diet*Age+(1|Section.ID), family=binomial, 
+              data=mydata, nAGQ=0)
+summary(model8)
+
+#uni-variate of age
+model9 <- glmer(ratio~Age+(1|Section.ID), family=binomial, 
+              data=mydata, nAGQ=0)
+summary(model9)
+
+#uni-variate of diet
+model9b <- glmer(ratio~Diet+(1|Section.ID), family=binomial, 
+              data=mydata, nAGQ=0)
+summary(model9b)
+
+#uni-variate of section
+model9c <- glmer(ratio~section+(1|Section.ID), family=binomial, 
+              data=mydata, nAGQ=0)
+summary(model9c)
+
+#model10=glmer(ratio~-1+section+(section:Diet)*Age+(1|Section.ID), family=binomial, 
+#              data=mydata, nAGQ=0)
+#summary(model10)
+
+```
+
+#Small intestine
+```{r}
+mydata_1=mydata[which(mydata$section %in% c("DUO","JEJ","ILE")),]
+
+#write.csv(mydata_1,"C:/Users/haowu/OneDrive/Desktop/yunan/mydata_xiaochang.csv",row.names = F )
+
+mydata_xiaochang=read.csv("mydata_xiaochang.csv")
+
+
+model1x=glmer(ratio~section+(Diet+Age)+(1|Section.ID), family=binomial, 
+              data=mydata_xiaochang, nAGQ=0)
+summary(model1x)
+```
+# large intestine
+```{r}
+mydata_2=mydata[which(mydata$section %in% c("PC","DC")),]
+
+model2x=lmer(ratio~section+(Diet+Age)+(1|Section.ID), 
+              data=mydata_2)
+summary(model2x)
+```
+
+
+
+#DC
+```{r}
+mydata_DC=mydata[which(mydata$section %in% c("DC")),]
+
+model_1DC=lm(ratio~-1+Diet+Age,data=mydata_DC)
+summary(model_1DC)
+
+library(car)
+ct1=matrix(c(-1,0,1,0),byrow=T,nrow=1)
+car::linearHypothesis(model=model_1DC,hypothesis.matrix = ct1,rhs = 0)
+#mean of each variable
+mean(mydata_DC$ratio[which(mydata_DC$Age %in% c("Old"))],na.rm=T)
+mean(mydata_DC$ratio[which(mydata_DC$Age %in% c("Young"))],na.rm=T)
+mean(mydata_DC$ratio[which(mydata_DC$Diet %in% c("Control"))],na.rm=T)
+mean(mydata_DC$ratio[which(mydata_DC$Diet %in% c("GOS"))],na.rm=T)
+mean(mydata_DC$ratio[which(mydata_DC$Diet %in% c("hGOS"))],na.rm=T)
+
+#sum number of variables
+sum(mydata_DC$Age %in% c("Old"),na.rm=T)
+sum(mydata_DC$Age %in% c("Young"),na.rm=T)
+sum(mydata_DC$Diet %in% c("Control"),na.rm=T)
+sum(mydata_DC$Diet %in% c("GOS"),na.rm=T)
+sum(mydata_DC$Diet %in% c("hGOS"),na.rm=T)
+
+model_2DC=glm(ratio~-1+Diet+Age,family=binomial,data=mydata_DC)
+summary(model_2DC)
+#install.packages("car")
+library(car)
+ct1=matrix(c(1,-1,0,0),byrow=T,nrow=1)
+car::linearHypothesis(model=model_2DC,hypothesis.matrix = ct1,rhs = 0)
+```
+#PC
+```{r}
+mydata_PC=mydata[which(mydata$section %in% c("PC")),]
+
+model_1PC=lm(ratio~-1+Diet+Age,data=mydata_PC)
+summary(model_1PC)
+ct1=matrix(c(0,1,-1,0),byrow=T,nrow=1)
+car::linearHypothesis(model=model_1PC,hypothesis.matrix = ct1,rhs = 0)
+#mean of each variable
+mean(mydata_PC$ratio[which(mydata_PC$Age %in% c("Old"))],na.rm=T)
+mean(mydata_PC$ratio[which(mydata_PC$Age %in% c("Young"))],na.rm=T)
+mean(mydata_PC$ratio[which(mydata_PC$Diet %in% c("Control"))],na.rm=T)
+mean(mydata_PC$ratio[which(mydata_PC$Diet %in% c("GOS"))],na.rm=T)
+mean(mydata_PC$ratio[which(mydata_PC$Diet %in% c("hGOS"))],na.rm=T)
+
+
+model_2PC=glm(ratio~-1+Diet+Age,family=binomial,data=mydata_PC)
+summary(model_2PC)
+
+library(car)
+ct1=matrix(c(1,-1,0,0),byrow=T,nrow=1)
+car::linearHypothesis(model=model_2PC,hypothesis.matrix = ct1,rhs = 0)
+```
+#DC 
+```{r}
+mydata_DC=mydata[which(mydata$section %in% c("DC")),]
+mydata_DC1=mydata_DC[-which(mydata_DC$Section.ID %in% c("OC5C","OG5C")),]
+
+model_1DC1=lm(ratio~-1+Diet+Age,data=mydata_DC1)
+summary(model_1DC1)
+ct1=matrix(c(-1,1,0,0),byrow=T,nrow=1)
+car::linearHypothesis(model=model_1DC1,hypothesis.matrix = ct1,rhs = 0)
+#mean of each variable
+mean(mydata_DC1$ratio[which(mydata_DC1$Age %in% c("Old"))],na.rm=T)
+mean(mydata_DC1$ratio[which(mydata_DC1$Age %in% c("Young"))],na.rm=T)
+mean(mydata_DC1$ratio[which(mydata_DC1$Diet %in% c("Control"))],na.rm=T)
+mean(mydata_DC1$ratio[which(mydata_DC1$Diet %in% c("GOS"))],na.rm=T)
+mean(mydata_DC1$ratio[which(mydata_DC1$Diet %in% c("hGOS"))],na.rm=T)
+
+#sum number of variables
+sum(mydata_DC1$Age %in% c("Old"),na.rm=T)
+sum(mydata_DC1$Age %in% c("Young"),na.rm=T)
+sum(mydata_DC1$Diet %in% c("Control"),na.rm=T)
+sum(mydata_DC1$Diet %in% c("GOS"),na.rm=T)
+sum(mydata_DC1$Diet %in% c("hGOS"),na.rm=T)
+
+```
+
+
+
+
+```{r}
+mydata1=mydata[-which(rowSums(is.na(mydata))!=0),]
+view(mydata1)
+sum(mydata1$Age %in% c("Old"),na.rm=T)
+
+
+write.csv(mydata_DUO,"D:/UNC/UNC Lab/Qupath/Hao/DUO.csv",row.names = F)
+write.csv(mydata_JEJ,"D:/UNC/UNC Lab/Qupath/Hao/JEJ.csv",row.names = F)
+write.csv(mydata_ILE,"D:/UNC/UNC Lab/Qupath/Hao/ILE.csv",row.names = F)
+write.csv(mydata_DC,"D:/UNC/UNC Lab/Qupath/Hao/DC.csv",row.names = F)
+write.csv(mydata_PC,"D:/UNC/UNC Lab/Qupath/Hao/PC.csv",row.names = F)
+```
